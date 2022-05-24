@@ -1,0 +1,190 @@
+---
+title: "Exercise 2"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## a) (0.5 points)
+Linear and quadratic discriminant analysis are based on the assumption that the feature vector $\mathbf{X} \in \mathbb{R}^p$ is multivariate normal distributed within the classes, i.e. we have $P_{\mathbf{X}| Y = \ell} \sim \mathcal{N}_p(\mathbf{\mu}_\ell, \mathbf{\Sigma}_\ell)$, where $Y \in \{0, \ldots, k\}$ denotes the random variable that describes the class label. For linear discriminant analysis, it is further assumed that  $\mathbf{\Sigma}_1 = \ldots = \mathbf{\Sigma}_k$, i.e. the covariance matrix of the feature vector is the same for all classes. 
+
+## b) (0.5 points)
+
+First, we load the `ggplot2` package for plotting and the `MASS` package for performing LDA/QDA.
+Then we read the training and test datasets into our environment and take a look at the first ten rows and 6 columns of the training dataset. 
+
+```{r, warning = FALSE}
+library(ggplot2)
+library(MASS)
+
+digits_train <-  read.csv(file= paste0("C:/Users/leaz9/OneDrive/Dokumente/StatLearn WS22",
+                                       "/data/train_digits.csv"))
+digits_train[ 1:10, 1:6]
+
+digits_test <-  read.csv(file= paste0("C:/Users/leaz9/OneDrive/Dokumente/StatLearn WS22",
+                                      "/data/test_digits.csv"))
+
+```
+
+Next, we try to use LDA for classifying the observations according to their class label (the true digit). 
+
+```{r, error=TRUE }
+lda_dig <- lda(V1 ~ ., data = digits_train)
+```
+The error message states that there are some variables that are constant. 
+This is because all digits are centered, i.e. some of the pixels on the edges are always white. 
+Running 
+```{r}
+summary(digits_train$V2)
+```
+confirms that (the top left pixel has value zero for all observations).
+This violates the assumption of normality, but more importantly, the (pooled) covariance matrix is singular and cannot be inverted (constant variables have zero variance and covariance).  This is why we get an error message.
+
+## c) 1.5 points
+
+We perform a principal component analysis on the data. We only center but don't scale 
+the observations, because a constant variable cannot be normalized to have variance 1. 
+Since all variables are measured on the same scale (values in $\{0, \ldots, 255\}$), scaling is not necessary anyways.
+
+```{r}
+pca_dig <- prcomp(digits_train[ , -1], center  = TRUE, scale = FALSE)
+```
+
+To find out how many principal components we need to explain at least 85% of total variance, 
+we use the importance matrix.
+
+```{r}
+smry_pc <- summary(pca_dig)
+which(smry_pc$importance[3, ] > .85)[1]
+```
+
+The first 49 PCs explain 85% of total variance. We save the scores of the first 49 PCs and assemble
+a new dataframe containing these scores and the class label. As before, we name the column giving the class
+labels `V1`.
+```{r}
+pc_scores <- pca_dig$x[ , 1:49]
+dfpc <- data.frame(V1 = digits_train$V1, pc_scores )
+dfpc[1:10, 1:6]
+
+```
+
+
+<!-- # this is what the first 15 PCs vectors look like -->
+<!-- pc_plots <- list() -->
+<!-- for( j in 1:15){ -->
+<!-- df1 <- data.frame( X = rep(1:28, 28), Y = rep(28:1, each = 28),  -->
+<!--                     PixelCol = as.numeric(pca_dig$rotation[, j])) -->
+
+<!-- pc_plots[[j]] <- ggplot(df1, aes( x = X, y = Y, fill = PixelCol)) +  -->
+<!--   geom_tile() +  -->
+<!--   scale_fill_gradient(low = "white", high = "black")+ -->
+<!--   labs( fill = "Pixel Colour") -->
+<!-- } -->
+
+<!-- ggpubr::ggarrange(plotlist = pc_plots, ncol = 5, nrow = 3, common.legend = TRUE) -->
+
+Now we perform LDA on the PC scores. 
+```{r}
+lda_pc <- lda( V1 ~ . , data = dfpc)
+
+```
+We predict the classes for the training data and compute the confusion matrix.
+```{r}
+pr_lda_pc <- predict(lda_pc, newdata = dfpc)
+conf_train <- table(pr_lda_pc$class, dfpc$V1)
+conf_train
+print(paste("The percentage of misclassified observations is", 
+(1- sum(diag(conf_train))/nrow(dfpc)  ) *100 , "%."))
+```
+
+
+To classify the test dataset, the observations need to be transformed in the same way that the trainingsdata was transformed. Therefore we subtract the column means of the trainingsdata (this is the centering step of the PCA) and then rotate this 'centered' data according to the PC rotation matrix. In other words, we compute the principal component scores of the test dataset in the same way the principal component scores of the training data were computed.
+
+```{r}
+dim(digits_test[ , -1])    # dimension of test dataset (without column giving the class label)
+rotation_mat <- pca_dig$rotation[ , 1:49]    # first 49 
+dim(rotation_mat)
+
+# column means of trainingsdata can be found in pca_dig$center
+test_cent <- digits_test[, -1] - matrix(rep( pca_dig$center, each = nrow(digits_test)  ), ncol = 784)
+
+test_pc_scores <- as.matrix(test_cent) %*% rotation_mat 
+
+# easier: use predict()-function
+test_pc_scores2 <- predict(pca_dig, newdata = digits_test[, -1] )[, 1:49]   # only need the first 49
+identical(test_pc_scores, test_pc_scores2)
+
+
+dfpc_test <- data.frame( V1 = digits_test$V1, test_pc_scores )
+
+dfpc_test[1:10 , 1:6]
+
+```
+
+
+Now we can predict the classes of the test data and compute the confusion matrix.
+```{r}
+dfpc_test <- data.frame(cbind(digits_test$V1, test_pc_scores) )
+
+pr_lda_test <- predict(lda_pc, newdata = dfpc_test)
+# works also without the column giving the true class labels 
+pr_lda_test1 <- predict(lda_pc, newdata = dfpc_test[ , -1])
+identical(pr_lda_test, pr_lda_test1)
+
+conf_test <- table(pr_lda_test$class, dfpc_test$V1)
+conf_test
+print( paste("The misclassification rate is", 
+round((1- sum(diag(conf_test))/nrow(dfpc_test))*100, 4),  "%"))
+
+
+```
+
+## d) (1.5 points)
+We use `ggplot()` because the base R plot uses white colour for some points when specifying 
+`col = dfpc$V1`. 
+
+```{r, fig.dim=c(6,4)}
+ggplot(dfpc, aes( x = PC1, y = PC2, colour = as.factor(V1))) + 
+  geom_point(size = 1.5) +
+  scale_color_brewer(palette = "Set1")+ 
+  labs(colour = "Class Label")
+ggplot(dfpc, aes( x = PC2, y = PC3, colour = as.factor(V1))) + 
+  geom_point(size = 1.5) +
+  scale_color_brewer(palette = "Set1")+ 
+  labs(colour = "Class Label")
+ggplot(dfpc, aes( x = PC1, y = PC3, colour = as.factor(V1))) + 
+  geom_point() +
+  scale_color_brewer(palette = "Set1")+ 
+  labs(colour = "Class Label")
+```
+
+Actually, some digits seem to have less variance, e.g. the digit 1.Therefore QDA might be a good idea, because it can account for class-specific covariance matrices.
+
+```{r}
+qda_pc <- qda( V1 ~ . , data = dfpc)
+
+pr_qda_pc <- predict(qda_pc, dfpc)
+
+conf_train_qda <- table(pr_qda_pc$class, dfpc$V1)
+conf_train_qda
+print( paste( "The misclassification rate for the training data based on QDA is", 
+round((1- sum(diag(conf_train_qda))/nrow(dfpc))*100, 4), "%"))
+```
+
+Indeed, that is less than for LDA. 
+Let's check on the test data. 
+
+```{r}
+pr_qda_pc_test <- predict(qda_pc, dfpc_test)
+
+conf_test_qda <- table(pr_qda_pc_test$class, dfpc_test$V1)
+conf_test_qda
+1- sum(diag(conf_test_qda))/nrow(dfpc_test)
+
+```
+
+That is `r round((1- sum(diag(conf_test_qda))/nrow(dfpc_test))*100,4)`% of misclassified observations. Therefore QDA does indeed perform  better than LDA, also on test data. 
+
+

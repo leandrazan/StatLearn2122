@@ -1,0 +1,408 @@
+---
+title: ''
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mvtnorm)
+library(MASS)
+library(tidyverse)
+```
+
+## 1 b) [0.5 points]
+
+We define a function that takes \(\mathbf{\mu}_1\), \(\mathbf{\mu}_2\) and \(\mathbf{\Sigma}\) as arguments and
+computes $p(1|2)$.
+
+```{r}
+miscl_theo <- function(mean1, mean2, sigma){
+  mah_dist <- sqrt( t(mean1 - mean2) %*% solve(sigma) %*% (mean1-mean2))
+  pnorm( -0.5* mah_dist)
+}
+
+```
+
+We can now compute the theoretical probability of misclassification for the given values of \(\mathbf{\mu}_1 , \mathbf{\mu}_2\) and \(\mathbf{\Sigma}\).
+```{r}
+mu1 <- c(1, -2)
+mu2 <- c(2,0)
+covSigma <- diag(c(1,1))
+
+
+miscl_theo(mean1 = mu1, mean2 = mu2, sigma = covSigma)
+
+```
+
+Thus, the probability of making a wrong classificaion is `r miscl_theo(mean1 = mu1, mean2 = mu2, sigma = covSigma)*100`%.
+
+We draw a sample from the corresponding Gaussian mixture model.
+```{r}
+samp1 <- mvtnorm::rmvnorm(100, mean = mu1, sigma = diag(c(1,1)))
+samp2 <-  mvtnorm::rmvnorm(100, mean = mu2, sigma = diag(c(1,1)))
+
+gmm_sample <- data.frame(rbind(samp1, samp2) , Class = rep(1:2, each = 100))
+```
+
+
+Since the components are independent here (covariance is 0, for normal variables that 
+ coincides with independence) one doesn't need the `mvtnorm` package. 
+ One can also use base R's `rnorm()`, which samples from the univariate normal distribution, as follows.
+ First, for each component, sample 200 observations from $\mathcal{N}(0,1)$:
+```{r, eval=FALSE}
+gmm_sample <- data.frame( X1 = rnorm(200), X2 = rnorm(200), Class = rep(1:2, each = 100)) 
+```
+The joint distribution is then $\mathcal{N}(0, I_2)$ with  $I_2$ the identity matrix on $\mathbb{R}^2$.
+
+Now we adjust the means (note that for $X \sim  \mathcal{N}(0,1)$ one has  $\mu + X \sim \mathcal{N}(\mu, 1)$). 
+```{r, eval = FALSE}
+gmm_sample[1:100, 1] <- gmm_sample[1:100, 1] + 1 
+gmm_sample[1:100, 2] <- gmm_sample[1:100, 2] - 2 
+gmm_sample[101:200, 1] <- gmm_sample[101:200, 1] + 2
+```
+
+
+Now we write a function that estimates the out-of-sample error based on leaving-one-out cross-validation (LOOCV). 
+The function's argument `sample_data` needs to have a column named `Class` containing the class labels.
+```{r}
+compute_loocv <- function(j, sample_data = gmm_sample){
+  lda_loo <- MASS::lda(Class ~ ., data = sample_data[-j, ])  # fit LDA to all but j-th observations
+  # return 1 (FALSE) if wrong class is predicted, else return 0 (TRUE)
+  predict(lda_loo, newdata = sample_data[j, ])$class != sample_data$Class[j] 
+}
+```
+
+Then we apply the function for each `j` in `1:200` (i.e. each row is left out once), and then we average
+```{r}
+mean(sapply( 1:200 , compute_loocv))
+```
+The LOOCV misclassification rate is `r mean(sapply( 1:200 , compute_loocv))`.
+
+
+## c) [0.5 points]
+We write a function that performs one iteration, i.e. sampling and computing LOOCV error.
+The arguments of the function are `seed`, which is set at the beginning of each iteration to make things 
+reproducible, the mean vectors `mean1` and `mean2` as well as the covariance matrix. The default value of the latter is the identity matrix on $\mathbb R^2$.
+
+```{r}
+iteration <- function(seed , mean1 , mean2, sigma = diag(c(1,1))){
+  set.seed(seed)   
+  samp1 <- mvtnorm::rmvnorm(100, mean = mu1, sigma = sigma )
+  samp2 <-  mvtnorm::rmvnorm(100, mean = mu2, sigma = sigma)
+  
+  gmm_samp <- data.frame(rbind(samp1, samp2) , Class = rep(1:2, each = 100))
+  
+  mean(sapply( 1:200 , compute_loocv, sample_data = gmm_samp)) # this is what the function returns
+  
+}
+```
+
+
+
+Then we make 100 iterations, i.e. we apply the above functions with seed from 1 to 100 and make a histogram, compute mean and standard deviatin.
+```{r}
+cv_errors <- sapply(1:100,  function(x){iteration(seed = x, mean1 = mu1, 
+                                                 mean2 = mu2, sigma = covSigma)}) 
+hist(cv_errors)
+mean(cv_errors)
+sd(cv_errors)
+miscl_theo(mean1 = mu1, mean2 = mu2, sigma = covSigma)
+```
+
+
+
+We see that the mean is pretty close (deviates in third decimal place) and that the standard deviation is small. 
+
+
+
+# Exercise 2
+First of all, we load the required packages and the `penguins` data. 
+```{r, warning=FALSE, echo=FALSE}
+
+library(palmerpenguins)
+library(MASS)
+data(penguins)
+
+```
+
+In the text it says to only keep columns containing measurements of quantitative variables, as well as the column containing
+the penguin's species. Later we will need the column `sex`, too (I forgot to mention it here, sorry). Further, we want to keep only the rows with complete observations on these variables.
+We generate a new dataframe following these directions. 
+```{r}
+pengus <- dplyr::select(penguins, -c("year", "island"))
+# only complete cases
+pengus <- pengus[complete.cases(pengus), ]
+```
+
+## a) [0.5 points]
+Now we randomly sample 80\% of the data as training data. Then we look at the proportions of 
+the different species within the training data.
+```{r}
+
+set.seed(4017)
+# sample indices of rows that make up the training data
+ind <- sample(nrow(pengus), nrow(pengus)*.8 )
+
+# training data
+trainsamp <- pengus[ind , ]
+# distribution of species within training data
+table(trainsamp$species)/nrow(trainsamp)
+
+```
+
+The test data consists of the observations that are not part of the training data. 
+We compute the distribution of species within the test data. 
+```{r}
+testsamp <- pengus[-ind, ]
+
+table(testsamp$species)/nrow(testsamp)
+```
+
+We see that the distributions of the species differ quite drastically for the two datasets.
+This can affect the model's performance, when the true distribution of classes is 
+not represented well in the training data. Since random splitting into training and test
+data doesn't guarantee the latter, one should be careful when only using one train-test-split.
+
+We compare to the distribution of classes for the whole dataset.
+```{r}
+table(pengus$species)/nrow(pengus)
+```
+
+
+## b) [0.5 points]
+There are many possible ways, and of course there are also packages that provide functions for this kind of sampling. Here, we present one solution that uses some self-written functions.
+
+First, we split the dataframe into a list of three dataframes, each containing the measurements 
+belonging to one species.
+
+```{r}
+pengus_split <- split(pengus, pengus$species)
+pengus_split
+```
+
+Now we write a function that samples a proportion of `train_prop` from the `1:nrow(data)`:
+
+```{r}
+get_train_index <- function(data, train_prop = 0.8, seed = 1){
+  set.seed(seed)  # set seed to make reproducible
+  ndata <- nrow(data)
+  sample(ndata, floor(ndata*train_prop))
+}
+```
+
+The function that returns training data based on rows sampled with `get_train_index()`:
+
+```{r}
+get_train_data <- function(data, train_prop = 0.8, seed = 1){
+  samp_ind <- get_train_index(data = data, train_prop = train_prop, seed = seed)
+  train_data <- data[samp_ind, ]    
+  return(train_data)
+}
+```
+
+And function that returns test data based on rows sampled in `get_train_index`.
+Note that, when applying these functions, the same seed must be used for the test data as for the training data.
+
+```{r}
+get_test_data <- function(data, train_prop = 0.8, seed = 1){
+  samp_ind <- get_train_index(data = data, train_prop = train_prop, seed = seed)
+  test_data <- data[-samp_ind, ]
+  return(test_data)
+}
+```
+
+
+We use the function  `purrr::map_dfr` which maps the function `get_train_data()` to the list elements in `pengus_split` and binds 
+the resulting dataframes by rows (dfr means dataframe rowbind).
+```{r}
+pengus_train <- purrr::map_dfr(pengus_split, get_train_data)
+pengus_test <- purrr::map_dfr(pengus_split, get_test_data)
+pengus_train
+```
+
+`map_dfr()` is kind of advanced, you can also use `lapply()` and assemble by hand.
+
+<!-- Alternatively without functions: -->
+<!-- Frequency of species within training data is -->
+
+<!-- ```{r} -->
+<!-- freq_train <- round(table(pengus$species) * .8) -->
+<!-- freq_train -->
+<!-- ``` -->
+
+<!-- Now we arrange the dataframe by species (ascending in alphabetical order) -->
+
+<!-- ```{r} -->
+<!-- pengus <- arrange(pengus, species) -->
+<!-- ``` -->
+
+
+
+<!-- freq_species <- table(pengus$species) -->
+<!-- freq_species -->
+<!-- # sample freq_train[1] = 121 times from the first freq_full[1] = 151 observations,  -->
+<!-- # then freq_train[2] = 54 times from the next 68 observations and so on -->
+
+<!-- # here, we get the index of the sampled rows  -->
+<!-- train_ind <- c(sample(freq_species[1],freq_train[1]),  -->
+<!--                sample((freq_species[1] + 1):(freq_species[1]+ freq_species[2]), freq_train[2]),  -->
+<!--                sample((freq_species[1]+ freq_species[2] +1): nrow(pengus), freq_train[3] )) -->
+
+<!-- # and then split into train and test set accordingly -->
+<!-- pengus_train <- pengus[train_ind, ] -->
+<!-- pengus_test <- pengus[ -train_ind, ] -->
+
+```{r}
+table(pengus_train$species)/nrow(pengus_train)
+table(pengus_test$species)/nrow(pengus_test)
+```
+
+## c) [0.5 points]
+
+```{r}
+lda_peng <- lda(species ~ . - sex, data = pengus_train)  # . - sex uses all columns but `sex`
+pred_peng_test <- predict(lda_peng, newdata = pengus_test)
+conf_test <- table(pred_peng_test$class, pengus_test$species)
+1- sum(diag(conf_test))/nrow(pengus_test)
+```
+The misclassification error on the test set is `r 1- sum(diag(conf_test))/nrow(pengus_test)`.
+
+## d) [1 point]
+
+```{r}
+cv_kfold <- function(K, data){
+
+  n_data <- nrow(data)
+  
+  # K must be an integer between 1 and nrow(data)
+  if( !( K == round(K)) |  K == 0 | K > n_data){stop( "Choose different value for K.")}
+
+  n_subsamp <- floor(n_data/K)     # length of each of the K subsamples
+  
+  data <- data[sample(n_data), ]  # shuffle data
+  
+  # assign each observation to one of the K subsamples, column 'K' specifies the subsample
+  # if n_data is not a multiple of K, assign the last n_data- K*n_subsamp observations randomly
+  
+  if( n_subsamp == n_data/K) {
+      data$K <- rep(1:K, each = n_subsamp)
+    }
+  else{
+    data$K <- c(rep(1:K, each = n_subsamp), sample(1:K, (n_data - K*n_subsamp)))
+  }
+  
+  # initialise vector that stores the misclassification rates
+  cv_errors <- numeric(K)
+  
+  for( k in 1:K){
+    # training data in iteration k 
+    data_train <- subset(data, !( K == k))   # leave out k-th subset
+    data_train <- dplyr::select(data_train, - "K")  # get rid of column specifying the subset
+    
+    # test data in iteration k 
+    data_test <-  subset(data, K == k)       # k-th subset
+    data_test <- dplyr::select(data_test, - "K") # get rid of column specifying the subset
+    
+    lda_fit <- lda(species ~ .,
+                   data = data_train)   # fit lda to training data
+    test_pred <- predict(lda_fit, newdata = data_test) # predict class for test data
+    
+    conf_mat <- table(test_pred$class, data_test$species)  # compute confusion matrix
+    
+    cv_errors[k] <- 1- sum(diag(conf_mat))/nrow(data_test) # misclassification rate in iteration k 
+  }
+  # return the average misclassification rate and also the vector of misclassification rares, 
+  # in case one is interested in variance
+  return(list(avg_misclass = mean(cv_errors),  errors = cv_errors))
+}
+
+```
+
+We apply the function: 
+
+```{r}
+cv_kfold(K =  10, data = pengus)
+```
+
+
+
+
+## e) [ 1.5 points]
+
+First, we subset the measurements of Chinstrap species. 
+```{r}
+pengus_chin <- subset(pengus, species == "Chinstrap")
+pengus_chin
+```
+
+We can make a pairwise scatter plot to check linear relation of predictors and target. 
+```{r}
+plot(pengus_chin[ , -c(1,6)], pch = 16)
+# also check correlation matrix
+cor(pengus_chin[ , -c(1, 6)])
+
+```
+Assumption of linear relation seems alright.
+
+Now we fit the linear models and estimate the out-of-sample error based on leaving-one-out cv.
+The Mean squared error is the squared error here, because in each iteration we only have one predicted value. 
+
+First model: only bill depth as explanatory variable
+
+```{r}
+compute_loocv1 <- function(j){
+  lm_loo <- lm( bill_length_mm ~ bill_depth_mm,   data = pengus_chin[-j ,  ]) # leave out j-th observation 
+  yhat <- predict(lm_loo, newdata = pengus_chin[j, ]) # predict bill_length based on model fit
+  (pengus_chin$bill_length_mm[j] - yhat)^2   # return squared error
+}
+
+```
+
+
+Apply function to all indices in `1:nrow(pengus)`, i.e. leave out each row once, then compute 
+the average.
+```{r}
+cv_mse1 <- mean(sapply(1:nrow(pengus_chin), compute_loocv1))
+cv_mse1
+```
+
+
+
+Second model: body mass and bill depth as explanatory variables. 
+
+```{r}
+compute_loocv2 <- function(j){
+  lm_loo <- lm( bill_length_mm ~  body_mass_g + bill_depth_mm,  data = pengus_chin[-j ,  ]) # leave out j-th observation 
+  yhat <- predict(lm_loo, newdata = pengus_chin[j, ]) # predict bill_length based on model fit
+  (pengus_chin$bill_length_mm[j] - yhat)^2   # return squared error
+}
+
+cv_mse2 <- mean(sapply(1:nrow(pengus_chin), compute_loocv2))
+cv_mse2
+```
+
+Third model: all three variables as predictors
+```{r}
+compute_loocv3 <- function(j){
+  lm_loo <- lm( bill_length_mm ~ flipper_length_mm + body_mass_g +  bill_depth_mm ,
+                data = pengus_chin[-j ,  ]) # leave out j-th observation 
+  yhat <- predict(lm_loo, newdata = pengus_chin[j, ]) # predict bill_length based on model fit
+  (pengus_chin$bill_length_mm[j] - yhat)^2   # return squared error
+}
+
+cv_mse3 <- mean(sapply(1:nrow(pengus_chin), compute_loocv3))
+cv_mse3
+
+```
+
+Compare the MSEs:
+```{r}
+
+cv_mse2 < cv_mse1
+cv_mse3 < cv_mse2
+cv_mse3 < cv_mse1
+
+```
+
+Model 2 has smallest MSE. However, reduction of MSE from model 2 to model 1 is only marginal. 
+Therefore, one would probably go for model 1 (also ok if you chose model 2).
