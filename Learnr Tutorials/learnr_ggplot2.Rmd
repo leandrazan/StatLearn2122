@@ -1,0 +1,280 @@
+---
+title: "ggplot2: for elegant data visualistion "
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(learnr)
+library(hflights)
+data(hflights)
+hflights <- as_tibble(hflights)
+
+data(mpg)
+mpg <- as_tibble(mpg)
+mpg[, c(1,2,6,7, 10, 11)] <- lapply(mpg[, c(1,2,6,7, 10, 11)], as.factor)
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+## Introduction
+
+We now learn something about making nice data visualisations with the famous `ggplot2` package. 
+An equivalent of `ggplot` is also available in the `plotnine` library in Python, so you might already be familier with it. 
+
+We will again work with the `mpg` data from the first tutorial, which is already loaded for you. 
+
+The readings in this tutorial follow [_R for Data Science_](http://r4ds.had.co.nz/), section 3. 
+
+## Basics
+
+In base R, when you want to have a scatter plot 
+of `mpg`'s variables engine displacement (`displ`) on the x-axis vs. `hwy` (highway miles per gallon) on the y-axis, 
+you'd run
+```{r showplot00, exercise = TRUE}
+plot(mpg$displ, mpg$hwy)
+```
+An equivalent plot in ggplot2 is made with
+```{r showplot0, exercise = TRUE}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy))
+```
+That looks fancier, right? Good looks isn't the only advantage of `ggplot`, however. Once you get used 
+to the syntax, it's way easier and faster!
+
+In `ggplot2`, you build your graph in several layers. If you have a data frame (or tibble) called `df`, 
+the steps to create a plot are as follows: 
+
+1. You create an empty plot providing your data `df` by calling `ggplot(df)` 
+2. You type a `+` ( __important__ : this has to come at the __end__ of a line)
+3. You add so called geometries (e.g. points or lines) with the `geom_***`-functions, e.g. 
+  * `geom_point()` for points
+  * `geom_line()` for lines
+  * `geom_histogram` for histograms
+  * `geom_boxplot` for boxplots
+  * ... the list goes on .. You can type geom_ and look at the autocompletion to see it. 
+4. All `geom_***`-functions have an argument called `mapping`, which specifies how
+   the variables in `df` should be mapped to the visual properties of your geometry (also called geom). 
+   The mapping argument is always given in combination with `aes()`, which takes arguments such as 
+   * `x`: what variable is mapped to the x-axis
+   * `y`: what variable is mapped to the y-axis
+   * `colour`: what variable is mapped to the color of your geom
+   * `shape`, `size` (for `geom_point`): what variable is mapped to the shape and size of the points
+   * `linetype` (e.g. `for geom_line()`): what variable is mapped to the linetype of the lines
+
+For example, if you want the points to be colour-coded depending on the `class` the respective observations belongs to, 
+you can do this with 
+```{r showplot1, exercise = TRUE}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy, color = class))
+```
+
+As you can see, a legend is added automatically (which base R's plot function doesn't do). 
+Try to change the code below such that the shape of your points is mapped to the variable `drv` (the type of drive train such as front-wheel drive).
+
+```{r showplotex1, exercise = TRUE}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy))
+```
+```{r showplotex1-hint-1}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy, shape = ))
+```
+```{r showplotex1-hint-2}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy, shape = drv))
+```
+You can also map the color to the class _and_ the shape to drive train - give it at try! 
+
+## Histograms
+
+Now we want to make a histogram of the `hwy` variable. 
+Histograms only need a variable that is mapped to the x-axis. When only the default options are used, the base R `hist` function produces nicer histograms (in my opinion). But this is fixed quickly, uncomment the comment (i.e. delete the `#`)
+in the code below to see how!
+
+```{r showhist1, exercise = TRUE}
+ggplot(mpg)+ 
+  geom_histogram( aes( x= hwy) , binwidth = 3 # ,  fill= "gray", color = "black" 
+  )
+```
+If you want to plot the density rather than the frequencies, add `y = ..density..` to `aes()`. 
+A kernel density estimate can then be added with `geom_density()`. Try it out in the following lines. 
+
+```{r showhist2, exercise = TRUE}
+ggplot(mpg)+ 
+  geom_histogram( aes( x= hwy) , binwidth = 3  ,  fill= "gray", color = "black") 
+```
+```{r showhist2-hint-1}
+ggplot(mpg)+ 
+  geom_histogram( aes( x= hwy , y = ..density..) , binwidth = 3  ,  fill= "gray", color = "black") + 
+  geom_density()
+```
+```{r showhist2-hint-2}
+ggplot(mpg)+ 
+  geom_histogram( aes( x= hwy , y = ..density..) , binwidth = 3  ,  fill= "gray", color = "black") + 
+  geom_density(aes( x = hwy), size = .9)
+```
+
+## Boxplots
+
+Last but not least, we'll have a look at boxplots. In `geom_boxplot`, you map a discrete variable to the x-axis and a continuous one to the y-axis: 
+
+```{r showboxp, exercise = TRUE}
+ggplot(mpg)+ 
+  geom_boxplot( aes( x= class, y = hwy))
+```
+
+
+## Facets 
+
+Sometimes you want to have seperate panels for subsets of your data. This can be done 
+with the functions 
+* `facet_wrap(~ y, nrow = n)` : split by `y` into `n` rows
+* `facet_grid( x  ~ y)` : Split by `x` (vertically) and `y` (horizontally). 
+  Here, `.` can be used instead of a variable if you want to split by only one variable into 
+  horizontally or vertically arranged subpanels.
+
+Change the last line to `facet_grid( class ~ .)` and  `facet_wrap( ~ class)` to see the differences.
+
+```{r showplotfacet, exercise = TRUE}
+ggplot(mpg)+ 
+  geom_point(aes( x = displ, y = hwy)) + 
+  facet_grid(. ~ class)
+```
+
+Now change the following code to split into `class` horizontally and `drv` vertically. 
+```{r explotfacet, exercise = TRUE}
+ggplot(mpg)+ 
+  geom_point(aes( x = displ, y = hwy)) 
+
+```
+```{r explotfacet-hint-1}
+ggplot(mpg)+ 
+  geom_point(aes( x = displ, y = hwy)) + 
+  facet_grid()
+```
+```{r explotfacet-hint-2}
+ggplot(mpg)+ 
+  geom_point(aes( x = displ, y = hwy)) + 
+  facet_grid(drv ~ class )
+```
+
+
+
+## Plot labels and saving plots
+
+Also very important: the labels of your plot. With the `lab()` function, you can add 
+a title, change the labels of your axes or change the variable name displayed in the legend:
+
+```{r exlabels, exercise = TRUE}
+ggplot(mpg) + 
+  geom_point(aes( x = displ, y = hwy, color = class))+ 
+  labs( title = "Scatterplot of displacement vs. highway miles per gallon", 
+        x = "Engine Displacement", 
+        y = "Highway miles per gallon", 
+        color = "Class of Car") + 
+  theme( text = element_text(size = 16))  # increases the font size of your text elements (labels, title, ...)
+```
+
+If you want to save the last plot as pdf named 'MyScatterplot' to a folder named 'Plots' in your current working directory, you 
+may run the following code (only run if you want to save it):
+
+```{r saveplot, exercise = TRUE}
+dir.create(paste0(getwd(), "/Plots"))  # creates the directory
+ggsave(filename = paste0(getwd(), "/Plots/MyScatterplot.pdf"), plot = last_plot(), 
+       device = "pdf", height = 10, width = 12 )
+```
+
+
+
+# Exercises
+
+Remember the `hflights`-data? Let's visualise some aspects of it.
+
+1. Make a Scatter plot of departure delay vs. arrival delay. Change the axis labels
+  so that they display the full variable names.
+```{r plex, exercise = TRUE}
+
+```
+
+```{r plex-hint-1}
+ggplot(hflights) +
+  geom_point(aes( x = , y=  )) +
+  labs(x = , y =)
+```
+
+```{r plex-hint-2}
+ggplot(hflights) +
+  geom_point(aes( x = DepDelay, y = ArrDelay)) +
+  labs(x = "Departure Delay", y = "Arrival Delay")
+
+```
+
+
+
+That was easy. Let's try something more sophisticated.
+
+2. To the `hflights` data, add a column containing the speed of the airplane in miles per hour (as we did in    the previous tutorial).
+   Then, make a density histogram of the speed variable. You want the histogram to have black contours and white    filling. In the end, add a density estimation curve.
+   You're welcome to use the `%>%` operator. Don't worry about the warnings messages: they appear because of missing values in your data.
+   
+```{r plexhist, exercise = TRUE}
+ggplot(hflights) +
+  geom_histogram()+
+  geom_density()
+```
+
+```{r plexhist-hint-1}
+ggplot( hflights %>% mutate( )) +
+  geom_histogram(aes( x = ,  y = ), fill = , color =  )+
+  geom_density(aes( x = ))
+```
+
+```{r plexhist-hint-2}
+ggplot( hflights %>% mutate(Speed = Distance/AirTime*60 )) +
+  geom_histogram(aes( x = Speed,  y = ..density..), fill = "white", color = "black")+
+  geom_density(aes( x = Speed))
+```
+
+3. Now, filter all flights that were carried out by the carriers `CO`, `XE` or `WN`, add a column containing the speed of the flights and make histograms for speed, but this time seperately for each carrier. You may add a density estimate if you like.
+__Hint__ : use `facet_wrap`.
+
+```{r plex3, exercise = TRUE}
+ggplot( hflights )+
+  geom_histogram()+
+  geom_density()+
+  facet_wrap( ~ UniqueCarrier)
+```
+
+```{r plex3-hint-1}
+ggplot( hflights %>%
+          filter( UniqueCarrier %in% c("CO", "XE", "WN")) %>%
+          mutate(Speed = Distance/AirTime*60 )) +
+  geom_histogram(aes( x = Speed, y = ..density..), color = "black" )+
+  geom_density(aes( x = Speed))+
+  facet_wrap( ~ UniqueCarrier)
+```
+
+```{r plex3-hint-2}
+ggplot( hflights %>%
+          filter( UniqueCarrier  c("CO", "XE", "WN")) %>%
+          mutate(Speed = Distance/AirTime*60 )) +
+  geom_histogram(aes( x =  ,  y = ..density..), color = "black" )+
+  geom_density(aes( x = Speed))+
+  facet_wrap( ~  )
+```
+
+```{r plex3-hint-3}
+ggplot( hflights %>%
+          filter( UniqueCarrier %in% c("CO", "XE", "WN")) %>%
+          mutate(Speed = Distance/AirTime*60 )) +
+  geom_histogram(aes( x = Speed, y = ..density..), color = "black" )+
+  geom_density(aes( x = Speed))+
+  facet_wrap( ~ UniqueCarrier)
+```
+
+
+
+
