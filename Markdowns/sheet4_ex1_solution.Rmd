@@ -1,0 +1,148 @@
+---
+title: " "
+author:   " "
+date: " "
+output:  
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ISLR)
+```
+
+## a) [0.5 points]
+First, we load the library and have a look at the documentation of the dataset.
+```{r, echo = FALSE}
+library(ISLR)
+?NCI60
+```
+
+ The format is a list containing two elements: data and labs.
+ 'data' contains the expression levels on 6839 genes from 64 cancer cell lines; 
+ 'labs' is the corresponding cancer type (of the cancer cell lines)
+
+```{r}
+nci_labs <- NCI60$labs
+nci_data <- NCI60$data
+dim(nci_data)
+```
+
+Running $\texttt{head()}$ is not informative because it has more than 6000 columns. 
+To be precise, we have 6830 gene expression measurements of 64 cancer cell lines.
+Instead, we have a look at the first 10 observations of the first five observed variables.
+```{r}
+nci_data[1:10, 1:5]
+```
+
+
+## b) [0.5 points]
+With the function $\texttt{table()}$ we can count how often which cancer type appears in the 
+vector with the cancer types. Then we extract the names of those that appear more often than 3 times. 
+
+```{r}
+table(nci_labs)
+
+which(table(nci_labs) > 3)        
+names(which(table(nci_labs)>3))
+chosen_rows <- nci_labs %in% names(which(table(nci_labs)>3))   
+chosen_rows  
+```
+The last vector specifies for each row whether it is kept or not.
+```{r}
+nci_red <- nci_data[chosen_rows,]
+dim(nci_red)
+```
+
+
+## c) [0.5 points]
+
+Since we cannot have a look at all means and variances seperately ( too many dimensions), 
+we just have a look at their summary statistics.
+```{r}
+summary(apply(nci_red, 2, var))
+summary(apply(nci_red, 2, mean))
+```
+
+
+The variances range between 0.03 and 12. That's a factor of 400, so 
+we should better scale the variables to have unit variance when performing PCA.
+
+## d)  [0.5 points]
+As seen in c), we should set $\texttt{scale = TRUE}$ in $\texttt{prcomp()}$
+to scale the observations (centering is done per default).
+
+```{r}
+pc_out <- prcomp(nci_red, scale. = TRUE)
+
+smry_pc <- summary(pc_out)
+smry_pc
+```
+
+## e) [0.5 points each]
+The importance matrix is one of the values in the list that is returned when running 
+$\texttt{summary()}$ on the $\texttt{prcomp}$-object. One can access it with $ \texttt{smry_pc\$importance}$.
+The cumulative proportion is the third row within that matrix. 
+```{r}
+smry_pc$importance[3, ]
+which( smry_pc$importance[3, ] >= .8)[1]
+
+```
+For example, the first criterion would suggest to use 31 PCs if we would want to explain 80 \% of total variance.
+
+
+For the second criterion, we need the average proportion of explained variance, which is the mean of
+the second row of the importance matrix: 
+
+```{r}
+# average prop of explained variance
+mean(smry_pc$importance[2, ])
+# those with larger than average proportion of explained variance
+which(smry_pc$importance[2,] >= mean(smry_pc$importance[2, ]))
+
+```
+
+The second criterion would choose 17 PCs.
+
+The third criterion is the screeplot, which can be generated with
+
+```{r}
+screeplot(pc_out, type = "l", npcs = 30)
+```
+
+It would suggest to use 3 PCs. 
+
+## f) [0.5 points]
+We first define a function that returns a color for each element of a vector: 
+
+```{r}
+Cols <- function(vec){
+  cols <- rainbow(length(unique(vec)))
+  return(cols[as.numeric(as.factor(vec))]) 
+}
+```
+
+The scores of the first two PCs are returned in the list element $x$ of the $\texttt{prcomp}$ object. 
+```{r, fig.dim = c(6,4)}
+plot(pc_out$x[,1:2], col = Cols(nci_labs[chosen_rows]), pch = 19,
+     xlab="Z1",ylab="Z2")
+legend("bottomright",  legend = unique(nci_labs[chosen_rows]), col = Cols(unique(nci_labs[chosen_rows])), 
+       pch = 19, cex = 0.6)
+
+```
+
+For $\texttt{ggplot()}$ we define a dataframe with the scores and the corresponding cancer type first.
+
+```{r, fig.dim=c(6,4)}
+library(ggplot2)
+df <- data.frame(pc_out$x[, 1:2])
+df$CancerType <- nci_labs[chosen_rows]
+ggplot(df, aes( x = PC1, y  = PC2, color = CancerType)) +
+  geom_point(size = 2) +
+   theme_bw()   # for black and white color theme
+```
+
+
+
+

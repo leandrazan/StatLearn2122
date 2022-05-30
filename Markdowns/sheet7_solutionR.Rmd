@@ -1,0 +1,96 @@
+---
+title: "Exercise 2"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## a) [0.5 points]
+First, we have a look at the $\texttt{iris}$ dataset. 
+```{r}
+head(iris)
+```
+The last column specifies the species that the observation belongs to and is not used for clustering. We compute the dissimilarity matrix, the default distance measure that is used is the euclidean distance
+
+```{r}
+dist_iris <- dist(iris[ , 1:4])
+```
+
+## b) [1 point]
+First, we perform complete, single and average linkage at store each object. 
+```{r}
+iris_cl <- hclust(dist_iris, method = "complete")
+
+iris_sl <- hclust(dist_iris, method = "single")
+
+
+iris_avg <- hclust(dist_iris, method = "average")
+
+```
+
+Now we plot the three dendrograms. Since we have objects of class $\texttt{hclust}$, the $\texttt{plot()}$ function plots the dendrogram. 
+
+```{r, fig.width= 11}
+plot(iris_cl, main = "Complete Linkage")
+plot(iris_sl, main = "Single Linkage")
+plot(iris_avg, main = "Average Linkage")
+```
+
+All dendrograms would suggest to cluster the data into two groups, since we want to cut the dendrogram where the vertical lines are longest. 
+The horizontal lines correspond to the distance between the two clusters which are fused. The vertical lines links these heights, so very long vertical lines indicate that clusters with a rather high dissimilarity are fused. 
+
+## c) [1 point]
+We cut the dendrograms using the function $\texttt{cutree}$, which returns the cluster belonging of each observation. 
+```{r}
+cut_avg <- cutree(iris_avg, k = 3)
+cut_cl <-  cutree(iris_cl, k = 3)
+cut_sl <-  cutree(iris_sl, k = 3)
+```
+For example 
+```{r}
+cut_avg
+```
+
+The contingency tables are
+
+```{r}
+table(cut_cl, iris$Species)
+table(cut_sl, iris$Species)
+table(cut_avg, iris$Species)
+```
+We see that the setosa species seems to be well seperated from the other species, since all methods cluster the observations from setosa (and only those) into one group. 
+Versicolour and virginica seem to be harder to seperate: the single linkage method groups almost all virginica and versicolor observations into one big cluster. The complete linkage groups about half of the versicolor and almost all of virginica into one cluster. The average linkage method performs best: 36 out of 50 of the virginica observations build a cluster, i.e. only 14 are grouped together with versicolor. 
+
+
+
+dend_avg <- as.dendrogram(iris_avg)
+
+## d) [1 point]
+For this, we need the function $\texttt{color\_branches}$ from the $\texttt{dendextend}$ package. 
+```{r, message=FALSE, warning=FALSE}
+library(dendextend)
+```
+Then we transform the $\texttt{hclust}$ objects to class $\texttt{dendrogram}$ and color the branches in 3 colours.
+```{r, fig.width= 11}
+iris_cl <-  as.dendrogram(iris_cl)
+iris_sl <-  as.dendrogram(iris_sl)
+iris_avg <-  as.dendrogram(iris_avg)
+
+dend_cl <- color_branches(iris_cl, k=3) 
+dend_sl <- color_branches(iris_sl, k=3) 
+dend_avg <- color_branches(iris_avg, k=3) 
+
+plot(dend_cl, main = "Complete Linkage")
+plot(dend_sl, main = "Single Linkage")
+plot(dend_avg, main = "Average Linkage")
+```
+
+
+## e) [0.5 points]
+The average linkage method is the one that performed best in c), so we color the observations according to the clusters obtained from average linkage when choosing three clusters. 
+
+```{r}
+pairs(iris[, 1:4], col = cut_avg, pch = 16)
+```
